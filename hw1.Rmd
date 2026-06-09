@@ -1,0 +1,86 @@
+---
+title: "Homework1"
+author: "David Lawlor"
+date: "2026-06-09"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# connect R studio and github
+
+Did most of the setup in hw0
+
+## 12.2
+
+hw0.
+
+## 12.3
+
+Just put the url into rstudio worked fine
+
+## 12.4
+
+wen't fine forgot to switch credentials easily fixed
+
+## 12.5
+
+Pushed fine no problems
+
+## 12.6
+
+Checked and saw my changes on the repo on github
+
+## Question 1
+
+install.packages("mclust") install.packages("ggplot2")
+
+```{r}
+
+library(mclust) 
+library(ggplot2) 
+data(banknote)
+
+str(banknote)
+```
+
+## Question 2
+
+```{r}
+
+ggplot(banknote, aes(x = Status, fill = Status)) + geom_bar()
+```
+
+This is a barchart with Status on the x-axis and fill color. There are
+exactly 100 genuine and 100 counterfeit banknotes. No anomalies.
+
+## Question 3
+
+```{r}
+
+ggplot(banknote, aes(x = Diagonal, fill = Status)) +
+geom_histogram(binwidth = 0.5, position = "identity", alpha = 0.7)
+```
+
+This is a histogram with Diagonal on the x-axis and Status as fill
+color. Genuine banknotes have a bigger diagonal than counterfeit ones.
+There is a small overlap in the middle where the two groups mix.
+
+## 4
+
+```{r}
+
+ggplot(banknote, aes(x = Right, y = Diagonal, color = Status)) +
+geom_point()
+```
+
+This is a scatterplot with Right on the x-axis, Diagonal on the y-axis,
+and status as the color. The two groups are separate clusters, meaning
+these two measurements alone can tell apart genuine and counterfeit
+banknotes. There are a few outliers on both sides, but the two groups
+still separate.
