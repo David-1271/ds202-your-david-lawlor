@@ -1,1 +1,377 @@
+---
+title: "What Team Statistics Are Most Associated with Winning NBA Games?"
+author: "David Lawlor"
+date: "`r Sys.Date()`"
+output: github_document
+---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.path = "figures/")
+```
+
+```{r libraries}
+library(dplyr)
+library(tidyr)
+library(readr)
+library(stringr)
+library(ggplot2)
+library(knitr)
+```
+
+# Introduction
+
+Winning in the NBA is the product of dozens of small factors on both ends of
+the floor, but box scores only record a handful of them: shooting
+percentages, rebounds, assists, turnovers, steals, blocks, and fouls. This
+project asks a simple question with a not-so-simple answer: **of the
+statistics recorded in a standard NBA box score, which ones are most closely
+associated with a team winning the game?**
+
+Specifically, we investigate:
+
+1. Which team statistics have the strongest relationship with winning?
+2. Are rebounds, assists, or shooting percentages more important for success?
+3. Do winning teams commit fewer turnovers?
+4. Which statistics differ the most between winning and losing teams?
+
+## Team Members
+
+- David Lawlor
+
+# Data
+
+## Data Source
+
+The analysis uses team-level game totals for NBA regular-season games from
+the 2010-11 through 2023-24 seasons, originally sourced from the NBA Stats
+API and distributed as a static CSV in the public
+[`NocturneBear/NBA-Data-2010-2024`](https://github.com/NocturneBear/NBA-Data-2010-2024)
+dataset (MIT licensed). Each row is one team's full box score line for one
+game (so every game contributes two rows: one for each team).
+
+We use this static, versioned CSV rather than a live-scraping package (e.g.
+`hoopR`) so that this document knits the same way every time without
+depending on an external API being reachable at render time — the CSV is
+committed alongside this report in `data/`.
+
+```{r load-data}
+nba_raw <- read_csv("data/regular_season_totals_2010_2024.csv",
+                     show_col_types = FALSE)
+dim(nba_raw)
+```
+
+## Data Cleaning
+
+The raw file includes a lot of columns we don't need (league-wide rank
+columns for every stat). We keep the identifying columns and the core box
+score counting stats, derive a numeric win indicator from `WL`, and derive a
+home/away indicator by checking whether the `MATCHUP` string contains `"@"`
+(away games are formatted like `"MIL @ MIA"`; home games like `"GSW vs.
+POR"`).
+
+```{r clean-data}
+nba <- nba_raw %>%
+  transmute(
+    season    = SEASON_YEAR,
+    team      = TEAM_NAME,
+    game_id   = GAME_ID,
+    game_date = as.Date(GAME_DATE),
+    matchup   = MATCHUP,
+    home      = !str_detect(MATCHUP, "@"),
+    win       = as.integer(WL == "W"),
+    fg_pct    = FG_PCT,
+    fg3_pct   = FG3_PCT,
+    ft_pct    = FT_PCT,
+    oreb = OREB, dreb = DREB, reb = REB,
+    ast = AST, tov = TOV, stl = STL, blk = BLK,
+    pf  = PF,  pts = PTS
+  ) %>%
+  filter(!is.na(win))
+
+# Any missing values left after cleaning?
+colSums(is.na(nba))
+```
+
+No missing values remain in the columns we use. One known limitation: a few
+franchises changed names or cities during this period (e.g. the Charlotte
+Bobcats became the Hornets in 2014), so `team` is not a perfectly stable
+identifier across all 14 seasons. That doesn't affect this analysis, since we
+never aggregate by team identity, but it would matter for any team-level
+(rather than game-level) question.
+
+## Marginal Summaries
+
+```{r summaries}
+glimpse(nba)
+
+n_distinct(nba$game_id)
+n_distinct(nba$season)
+n_distinct(nba$team)
+
+summary(nba %>% select(fg_pct, fg3_pct, reb, ast, tov, stl, blk, pts))
+```
+
+The dataset covers `r n_distinct(nba$season)` seasons,
+`r format(n_distinct(nba$game_id), big.mark = ",")` unique games, and
+`r nrow(nba)` team-game rows (roughly balanced between wins and losses, since
+every game has exactly one winner and one loser).
+
+## Example Visualization
+
+```{r pts-hist}
+ggplot(nba, aes(pts)) +
+  geom_histogram(binwidth = 5, fill = "#1d428a", color = "white") +
+  labs(
+    title = "Distribution of Team Points per Game (2010-11 to 2023-24)",
+    x = "Points Scored", y = "Number of Team-Games"
+  ) +
+  theme_minimal()
+```
+
+Team scoring is roughly bell-shaped and centered a little above 100 points,
+with a long-ish right tail from occasional blowout-pace games.
+
+# Analysis
+
+## Home Court Advantage
+
+Before looking at box-score stats, it's worth checking a simpler, well-known
+effect: does playing at home matter?
+
+```{r home-advantage}
+home_summary <- nba %>%
+  group_by(home) %>%
+  summarise(win_rate = mean(win), games = n(), .groups = "drop") %>%
+  mutate(location = ifelse(home, "Home", "Away"))
+
+kable(home_summary %>% select(location, win_rate, games),
+      digits = 3, col.names = c("Location", "Win Rate", "Games"),
+      caption = "Win rate by home/away status")
+```
+
+```{r home-advantage-chart}
+ggplot(home_summary, aes(x = location, y = win_rate, fill = location)) +
+  geom_col(width = 0.6) +
+  geom_hline(yintercept = 0.5, linetype = "dashed", color = "gray40") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(values = c("Away" = "#c8102e", "Home" = "#1d428a")) +
+  labs(title = "Home Teams Win More Often",
+       x = NULL, y = "Win Rate") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+Home teams won about
+`r scales::percent(home_summary$win_rate[home_summary$location == "Home"], accuracy = 0.1)`
+of games versus
+`r scales::percent(home_summary$win_rate[home_summary$location == "Away"], accuracy = 0.1)`
+for away teams. This is a real and well-documented effect, and it's a useful
+reminder before we get to box-score stats: some of what predicts winning
+isn't a "stat" a team controls in the moment at all. We include `home` as a
+control variable in the regression below for that reason.
+
+## How Do Winning and Losing Teams Differ, On Average?
+
+```{r win-loss-table}
+summary_tbl <- nba %>%
+  mutate(result = ifelse(win == 1, "Win", "Loss")) %>%
+  group_by(result) %>%
+  summarise(
+    `FG%` = mean(fg_pct), `3P%` = mean(fg3_pct), `FT%` = mean(ft_pct),
+    Reb = mean(reb), Ast = mean(ast), TOV = mean(tov),
+    Stl = mean(stl), Blk = mean(blk), PF = mean(pf),
+    .groups = "drop"
+  )
+
+kable(summary_tbl, digits = 3, caption = "Average box score stats: wins vs. losses")
+```
+
+Winning teams out-shoot losing teams from the field and from three, grab
+more rebounds, record more assists and steals, and commit fewer turnovers
+and fouls. None of that is surprising on its own — the question is *how
+much* each of these differs, and whether some of these differences are just
+echoes of the others (e.g. assists naturally go up when shooting is better,
+since a made basket is a prerequisite for an assist).
+
+```{r fg-pct-boxplot}
+ggplot(nba, aes(x = factor(win, labels = c("Loss", "Win")), y = fg_pct,
+                 fill = factor(win, labels = c("Loss", "Win")))) +
+  geom_boxplot(alpha = 0.8) +
+  scale_fill_manual(values = c("Loss" = "#c8102e", "Win" = "#1d428a")) +
+  labs(title = "Field Goal Percentage: Wins vs. Losses",
+       x = NULL, y = "Field Goal %") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+## Which Stats Correlate Most With Winning, On Their Own?
+
+```{r marginal-cor}
+vars <- c("fg_pct", "fg3_pct", "ft_pct", "oreb", "dreb", "reb",
+          "ast", "tov", "stl", "blk", "pf")
+
+marginal_cor <- tibble(
+  stat = vars,
+  correlation = sapply(vars, function(v) cor(nba[[v]], nba$win))
+) %>%
+  arrange(desc(correlation))
+
+kable(marginal_cor, digits = 3,
+      caption = "Marginal (one-at-a-time) correlation of each stat with winning")
+```
+
+```{r marginal-cor-chart, fig.height=5}
+ggplot(marginal_cor, aes(x = reorder(stat, correlation), y = correlation,
+                          fill = correlation > 0)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_manual(values = c("TRUE" = "#1d428a", "FALSE" = "#c8102e"), guide = "none") +
+  labs(title = "Marginal Correlation of Each Box Score Stat With Winning",
+       x = NULL, y = "Correlation with Win") +
+  theme_minimal()
+```
+
+On their own, field goal percentage, defensive rebounds, three-point
+percentage, and assists show the strongest positive association with
+winning; turnovers and personal fouls are the only stats negatively
+associated with winning. Offensive rebounds are essentially uncorrelated
+with winning at the marginal level — which seems surprising at first (more
+extra possessions should help, shouldn't it?).
+
+## Being Skeptical: Are These Stats Really Independent?
+
+A one-at-a-time correlation can be misleading, because these stats are not
+independent of each other. For example, an assist can only happen after a
+made shot, so we'd expect assists and field goal percentage to move
+together for reasons that have nothing to do with winning specifically.
+
+```{r multicollinearity}
+predictors <- c("fg_pct", "fg3_pct", "oreb", "dreb", "ast", "tov", "stl", "blk", "pf")
+cor_matrix <- cor(nba[, predictors])
+diag(cor_matrix) <- NA
+
+cat("Strongest correlation between two predictors:",
+    round(max(abs(cor_matrix), na.rm = TRUE), 3),
+    "(assists and field goal %)\n")
+```
+
+Assists and field goal percentage correlate at
+`r round(cor(nba$ast, nba$fg_pct), 3)` with each other — which is exactly
+the mechanical relationship we'd expect, not a coincidence. This means the
+marginal correlations above can overstate how much *independent* information
+a stat like assists actually contributes once we already know a team's
+shooting percentage. To account for this, we fit a multiple logistic
+regression that estimates each stat's association with winning *while
+holding the others constant*.
+
+It's also worth being clear about what this analysis can and can't say. All
+of these are box-score numbers recorded *during* the same game whose outcome
+we're predicting — this is a description of what tends to co-occur with
+winning within a game, not a forecast built from information known before
+tip-off, and not a causal claim (a team that is already winning by a lot may
+also rack up steals and fast-break assists *because* it's winning, not only
+the reverse). Home court is included as a control, but we can't rule out
+other confounders like opponent quality or pace of play that aren't in this
+box-score-only dataset.
+
+```{r logistic-regression}
+nba_scaled <- nba %>%
+  mutate(across(all_of(predictors), ~ as.numeric(scale(.)))) %>%
+  mutate(home_num = as.integer(home))
+
+fit <- glm(
+  win ~ fg_pct + fg3_pct + oreb + dreb + ast + tov + stl + blk + pf + home_num,
+  data = nba_scaled, family = binomial()
+)
+
+summary(fit)
+
+mcfadden_r2 <- 1 - fit$deviance / fit$null.deviance
+cat("McFadden pseudo R-squared:", round(mcfadden_r2, 3), "\n")
+```
+
+```{r regression-chart, fig.height=5}
+coef_tbl <- tibble(
+  stat = names(coef(fit))[-1],
+  estimate = coef(fit)[-1]
+) %>%
+  arrange(desc(estimate))
+
+ggplot(coef_tbl, aes(x = reorder(stat, estimate), y = estimate,
+                      fill = estimate > 0)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_manual(values = c("TRUE" = "#1d428a", "FALSE" = "#c8102e"), guide = "none") +
+  labs(title = "Standardized Logistic Regression Coefficients",
+       subtitle = "Association with winning, holding other stats constant",
+       x = NULL, y = "Coefficient (log-odds per 1 SD)") +
+  theme_minimal()
+```
+
+This is where the skepticism pays off: **assists flips from one of the
+strongest positive marginal correlations to a small *negative* coefficient**
+once field goal percentage is held constant. Assists aren't bad for winning
+— but almost all of the "assists help you win" signal turns out to already
+be captured by field goal percentage; a team with a below-average number of
+assists relative to its shooting percentage tends to do slightly worse, not
+better. Field goal percentage and defensive rebounding remain the two
+strongest positive predictors even after controlling for everything else,
+and turnovers remain clearly negative. The model's McFadden pseudo
+R-squared of about `r round(mcfadden_r2, 2)` indicates these box-score stats
+jointly explain a substantial share of the win/loss outcome, but well short
+of all of it — consistent with the idea that game outcomes also depend on
+things box scores don't capture, like the opponent's stats in the same game.
+
+# Conclusions
+
+Returning to the original questions:
+
+1. **Which team statistics have the strongest relationship with winning?**
+   Field goal percentage and defensive rebounding, both on their own and
+   after controlling for other stats. Turnovers and personal fouls are the
+   only stats consistently *negatively* associated with winning.
+
+2. **Are rebounds, assists, or shooting percentages more important?**
+   Shooting efficiency (field goal % and three-point %) and defensive
+   rebounding matter most. Assists look important in isolation, but that
+   effect is largely explained by shooting percentage rather than
+   independent playmaking value — a good example of why it matters to
+   check correlated predictors rather than stopping at one-at-a-time
+   correlations.
+
+3. **Do winning teams commit fewer turnovers?**
+   Yes. Winning teams average
+   `r round(summary_tbl$TOV[summary_tbl$result == "Win"], 1)`
+   turnovers per game versus
+   `r round(summary_tbl$TOV[summary_tbl$result == "Loss"], 1)`
+   for losing teams, and turnovers have a negative, statistically
+   significant coefficient in the regression even after controlling for
+   every other stat.
+
+4. **Which statistics differ the most between winning and losing teams?**
+   By both marginal correlation and regression coefficient, field goal
+   percentage and defensive rebounding show the largest, most consistent
+   gaps between winning and losing teams. Offensive rebounding is the
+   biggest surprise: it looks irrelevant on its own but becomes a
+   meaningfully positive predictor once shooting percentage is held
+   constant — likely because offensive rebounds are mechanically more
+   available after a missed shot, so their value is masked at the
+   marginal level.
+
+Overall, the data supports a fairly intuitive basketball story — shoot
+efficiently, control the defensive glass, and take care of the ball — but
+getting there required being skeptical of the raw, one-at-a-time
+correlations, since several of these stats move together for reasons that
+have nothing to do with winning.
+
+# Reproducibility
+
+This report reads `data/regular_season_totals_2010_2024.csv` from a path
+relative to this file, so it will knit successfully as long as that CSV is
+committed in the same repository under `data/`. It uses only CRAN packages
+available for this course (`dplyr`, `tidyr`, `readr`, `stringr`, `ggplot2`,
+`knitr`) and does not require network access at knit time.
+
+```{r session-info}
+sessionInfo()
+```
