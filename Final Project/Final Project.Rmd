@@ -1,0 +1,111 @@
+---
+title: "Final Project Proposal"
+author: "David Lawlor"
+date: "2026-07-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Research Topic
+
+What Team Statistics Are Most Associated with Winning NBA Games?
+
+## Team Members
+
+- David Lawlor
+
+# Data
+
+## Dataset Description
+
+For this project, I will analyze NBA team game statistics using the hoopR package, which provides access to official NBA game and box score data. The dataset contains thousands of NBA games and includes both categorical variables (such as team, opponent, season, and home/away status) and numeric variables (such as points, rebounds, assists, turnovers, field goal percentage, and three-point percentage). This makes it well suited for exploratory data analysis and visualization in R.
+
+**Data Source:** <https://sportsdataverse.org/hoopR/>
+
+## Load Data
+
+```{r}
+library(hoopR)
+library(dplyr)
+library(ggplot2)
+
+nba <- load_nba_team_box()
+```
+
+## First Data Cleaning Steps
+
+The first steps of data cleaning will include:
+
+- Loading the NBA team box score dataset.
+- Selecting variables relevant to the analysis.
+- Removing duplicate observations if necessary.
+- Checking for missing values.
+- Converting variables to appropriate data types.
+- Creating a variable indicating whether each team won or lost the game (if needed).
+
+## Marginal Summaries
+
+The following summaries will be included after loading the data.
+
+```{r eval=FALSE}
+# View the structure
+glimpse(nba)
+
+# Number of observations and variables
+dim(nba)
+
+# Summary statistics
+summary(
+  select(
+    nba,
+    team_score,
+    assists,
+    total_rebounds,
+    turnovers,
+    field_goal_pct,
+    three_point_field_goal_pct
+  )
+)
+
+# Number of teams
+n_distinct(nba$team_name)
+
+# Number of seasons
+n_distinct(nba$season)
+```
+
+## Example Visualizations
+
+```{r eval=FALSE}
+ggplot(nba, aes(team_score)) +
+  geom_histogram(bins = 30) +
+  labs(
+    title = "Distribution of Team Scores",
+    x = "Points Scored",
+    y = "Number of Games"
+  )
+
+ggplot(nba, aes(total_rebounds, team_score)) +
+  geom_point(alpha = 0.5) +
+  labs(
+    title = "Rebounds vs. Team Score",
+    x = "Total Rebounds",
+    y = "Points Scored"
+  )
+```
+
+# Questions to be Addressed
+
+The goal of this project is to determine which team statistics are most associated with winning NBA games.
+
+Specifically, I plan to investigate the following questions:
+
+1.  Which team statistics have the strongest relationship with winning?
+2.  Are rebounds, assists, or shooting percentages more important for success?
+3.  Do winning teams commit fewer turnovers?
+4.  Which statistics differ the most between winning and losing teams?
+
+I will answer these questions using summary statistics, visualizations, correlation analysis, and simple regression techniques learned throughout the course.

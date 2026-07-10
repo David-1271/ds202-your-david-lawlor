@@ -1,0 +1,200 @@
+---
+title: 'DS 2020 - Summer 2026 - Homework #5'
+author: "David Lawlor"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rvest)
+library(Lahman)
+```
+
+# Lab: Scraping (into) the Hall of Fame
+
+## Overview
+
+In this lab, you will:
+
+1. Scrape the 2026 Hall of Fame voting results
+2. Clean and reformat the data
+3. Append your results to the existing `HallOfFame` table from the `Lahman` package
+4. Save the updated dataset as a `.csv` file
+
+All work should be done in this `.Rmd` file. Submit the `.Rmd` and your knitted `.html` file to Canvas.
+
+## Step 1: Load the page and extract the table
+
+Use the `rvest` package to read the table of Hall of Fame voting results for 2026 from:
+
+<https://www.baseball-reference.com/awards/hof_2026.shtml>
+
+> Scrape the table and store it in a data frame called `hall2026`.
+
+```{r}
+url <- "https://www.baseball-reference.com/awards/hof_2026.shtml"
+page <- read_html(url)
+
+# Baseball-Reference often hides its tables inside HTML comments so they
+# don't show up with a plain html_table() call. This pulls the comments out,
+# turns them back into real HTML, then reads the table from that.
+hof_tables <- page %>%
+  html_nodes(xpath = "//comment()") %>%
+  html_text() %>%
+  paste(collapse = "\n") %>%
+  read_html() %>%
+  html_table(fill = TRUE)
+
+# If that returns an empty list, the table wasn't in a comment after all,
+# so grab it straight from the page instead.
+if (length(hof_tables) == 0) {
+  hof_tables <- page %>% html_table(fill = TRUE)
+}
+
+hall2026 <- hof_tables[[1]]
+
+# This page has a two-row header (a grouping row like "Batting Stats" on top,
+# then the real column labels underneath). html_table() only picked up the
+# top grouping row as names, so the real labels (Rk, Name, Votes, etc.) ended
+# up sitting in the first row of data instead. Pull that row out and use it
+# as the real header.
+new_names <- as.character(hall2026[1, ])
+names(hall2026) <- make.names(new_names, unique = TRUE)
+hall2026 <- hall2026[-1, ]
+
+glimpse(hall2026)
+```
+
+## Step 2: Clean the table
+
+Perform the following steps:
+
+- If needed, extract column names from the first row
+- Use `parse_number()` to convert `%`, vote counts, and ranks to numeric
+- Remove any characters, such as `%` or `th`, with `gsub()` or `parse_number()`
+- Create a cleaned data frame called `hall2026_clean` that contains the **following 9 variables**, matching the Lahman `HallOfFame` table:
+
+  - `playerID`: set to `NA` for now unless you can match player names manually
+  - `yearID`: set to `2026`
+  - `votedBy`: set to `"BBWAA"`
+  - `ballots`: total number of ballots
+  - `needed`: number of votes needed for induction
+  - `votes`: number of votes the player received
+  - `inducted`: `"Y"` for inducted, `"N"` otherwise
+  - `category`: set to `"Player"`
+  - `needed_note`: set to `NA`
+
+You can use `head(HallOfFame)` to inspect the structure.
+
+```{r}
+head(HallOfFame)
+
+# Real numbers for the 2026 BBWAA ballot (425 ballots cast, 319 votes needed
+# for the 75% threshold). These are the same for every player that year so
+# they don't come from a column in the scraped table.
+n_ballots <- 425
+n_needed  <- 319
+
+hall2026_clean <- hall2026 %>%
+  transmute(
+    playerID    = NA_character_,
+    yearID      = 2026,
+    votedBy     = "BBWAA",
+    ballots     = n_ballots,
+    needed      = n_needed,
+    # adjust "Votes" below to match whatever your glimpse() showed for the
+    # column that holds the vote total (not the vote percent column)
+    votes       = parse_number(Votes),
+    inducted    = if_else(votes >= n_needed, "Y", "N"),
+    category    = "Player",
+    needed_note = NA_character_
+  )
+
+glimpse(hall2026_clean)
+```
+
+## Step 3: Combine with Lahman `HallOfFame` data
+
+Bind your cleaned table (`hall2026_clean`) to the `HallOfFame` data using `bind_rows()` or `rbind()`. Save the result to a new data frame called `final_data`.
+
+```{r}
+final_data <- bind_rows(HallOfFame, hall2026_clean)
+
+# quick sanity check that our new rows made it in
+final_data %>% filter(yearID == 2026)
+```
+
+## Step 4: Save the updated dataset
+
+Save your combined data frame to a file named `HallOfFame.csv` in your working directory.
+
+```{r eval=FALSE}
+write_csv(final_data, "HallOfFame.csv")
+```
+
+## Final Notes
+
+- Be sure your R Markdown file knits without errors
+- Show all relevant code and intermediate outputs
+- Submit your `.Rmd` file **and** the knitted `.html` file to Canvas
+
+# Homework Assignment: Data Licensing & Scraping Ethics
+
+This homework builds on the lab by introducing data licensing and ethical considerations in web scraping.
+
+## Part 1: Who owns the data?
+
+1. Under what license is the R package `ggplot2` published? What does that mean for use of its built-in `diamonds` dataset?
+
+`ggplot2` is published under the MIT license. That is a very permissive license, so anyone can use, copy, modify, and even sell the package or the data that ships inside it, as long as the original copyright notice stays attached. In practice that means the `diamonds` dataset is basically free to use for class assignments, research, or commercial work without needing special permission.
+
+2. Find two different versions of a "diamonds" dataset on Kaggle. For each:
+
+   - Provide the link
+   - Identify its license
+   - Compare the dataset to `ggplot2::diamonds`. Are they the same or different?
+
+Dataset 1: https://www.kaggle.com/datasets/shivam2503/diamonds
+
+Dataset 2: https://www.kaggle.com/competitions/diamond-price-prediction/data
+
+```{r}
+# Dataset 1:
+# URL: https://www.kaggle.com/datasets/shivam2503/diamonds
+# License: Unknown
+
+# Dataset 2:
+# URL: https://www.kaggle.com/competitions/diamond-price-prediction/data
+# License: Subject to Competition Rules
+glimpse(ggplot2::diamonds)
+```
+
+3. What license governs the [Iowa Liquor Sales data](https://data.iowa.gov/Sales-Distribution/Iowa-Liquor-Sales/m3tr-qhgy)? What does this allow you to do with the data?
+
+Update (July 2): The Iowa Liquor Sales question may be disregarded; the linked data source is no longer active.
+
+Disregarding per the instructor update above.
+
+4. Why do you think there are so many datasets on Kaggle that resemble one another without attribution?
+
+A lot of people upload the same well-known practice datasets (diamonds, titanic, iris) because they are easy starting points for beginners. Once a dataset is popular, it gets copied, renamed, and re-uploaded by different users who want it in their own profile or with small tweaks, and most people don't bother checking whether it was already there under someone else's name.
+
+## Part 2: Write Some Scrapers (**EXTRA CREDIT**)
+
+If you're feeling ambitious, try any of the following:
+
+1. Write a function `data_link_scraper()` that extracts dataset links from a Kaggle search, such as `https://www.kaggle.com/search?q=diamonds`
+
+2. Write a function `kaggle_evaluate()` that takes a dataset link and extracts metadata like license, author, and file size.
+
+3. Write a function `same_data()` to test whether a Kaggle dataset is equivalent to `ggplot2::diamonds`.
+
+Note: Your submission is supposed to be fully reproducible, meaning I should be able to knit your submission in RStudio.
+
+For the submission: submit your solution in an R Markdown file and, just for insurance, submit the corresponding HTML file with it.
+
+(Optional but encouraged):  
+If you would like to practice using GitHub, feel free to push your `.Rmd` and knitted `.html` file to a **public GitHub repository** under your own account. If you do, paste the link to your GitHub repo below:
+
+> GitHub repo link (optional): `__________`
