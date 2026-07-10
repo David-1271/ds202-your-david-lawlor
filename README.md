@@ -40,9 +40,9 @@ through 2023-24, pulled from a public dataset on GitHub
 ([`NocturneBear/NBA-Data-2010-2024`](https://github.com/NocturneBear/NBA-Data-2010-2024),
 MIT licensed). Each game has two rows in the data, one for each team.
 
-We’re using a saved CSV instead of pulling live data with a package like
-`hoopR` so this report still knits even if an API is down. The CSV lives
-in `data/` in this repo.
+We saved the data as a CSV in `data/` instead of pulling it live with a
+package like `hoopR`, so this report doesn’t depend on an API being up
+when it knits.
 
 ``` r
 nba_raw <- read_csv("data/regular_season_totals_2010_2024.csv",
@@ -447,11 +447,10 @@ checking that these correlations weren’t just riding on each other.
 
 # Reproducibility
 
-This report reads `data/regular_season_totals_2010_2024.csv` from a path
-relative to this file, so it knits as long as that CSV is committed in
-the same repo under `data/`. It only uses CRAN packages from this course
-(`dplyr`, `tidyr`, `readr`, `stringr`, `ggplot2`, `knitr`) and doesn’t
-need network access to knit.
+This report reads `data/regular_season_totals_2010_2024.csv` straight
+from this repo, so it knits without needing internet access. It only
+uses tidyverse packages from class (`dplyr`, `tidyr`, `readr`,
+`stringr`, `ggplot2`, `knitr`).
 
 ``` r
 sessionInfo()
